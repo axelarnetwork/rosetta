@@ -11,6 +11,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/codec/address"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
@@ -42,7 +43,7 @@ func (s *ConverterTestSuite) SetupTest() {
 	// instantiate converter
 	cdc, ir := rosetta.MakeCodec()
 	txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
-	s.c = rosetta.NewConverter(cdc, ir, txConfig)
+	s.c = rosetta.NewConverter(cdc, ir, txConfig, address.NewBech32Codec("cosmos"))
 	// add utils
 	s.ir = ir
 	s.cdc = cdc

@@ -40,6 +40,10 @@ Ref: https://keepachangelog.com/en/1.0.0/
 
 * [#189](https://github.com/cosmos/rosetta/pull/189) Add system tests.
 
+### Bug Fixes
+
+* [#190](https://github.com/cosmos/rosetta/pull/190) Fixed construction payloads to properly handle transaction signers.
+
 ## [v0.50.11](https://github.com/cosmos/rosetta/releases/tag/v0.50.11) 2024-12-19
 
 ### Improvements

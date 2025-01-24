@@ -15,6 +15,7 @@ import (
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 
 	signingv1beta1 "cosmossdk.io/api/cosmos/tx/signing/v1beta1"
+	"cosmossdk.io/core/address"
 	sdkmath "cosmossdk.io/math"
 
 	sdkclient "github.com/cosmos/cosmos-sdk/client"
@@ -106,9 +107,10 @@ type converter struct {
 	bytesToSign     func(tx authsigning.Tx, signerData authsigning.SignerData) (b []byte, err error)
 	ir              codectypes.InterfaceRegistry
 	cdc             *codec.ProtoCodec
+	ac              address.Codec
 }
 
-func NewConverter(cdc *codec.ProtoCodec, ir codectypes.InterfaceRegistry, cfg sdkclient.TxConfig) Converter {
+func NewConverter(cdc *codec.ProtoCodec, ir codectypes.InterfaceRegistry, cfg sdkclient.TxConfig, ac address.Codec) Converter {
 	return converter{
 		newTxBuilder:    cfg.NewTxBuilder,
 		txBuilderFromTx: cfg.WrapTxBuilder,
@@ -130,6 +132,7 @@ func NewConverter(cdc *codec.ProtoCodec, ir codectypes.InterfaceRegistry, cfg sd
 		},
 		ir:  ir,
 		cdc: cdc,
+		ac:  ac,
 	}
 }
 
@@ -673,7 +676,7 @@ func (c converter) SigningComponents(tx authsigning.Tx, metadata *ConstructionMe
 		return nil, nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("getting signers v2 from tx %s", err.Error()))
 	}
 
-	signers, err := tx.GetSignaturesV2()
+	signers, err := tx.GetSigners()
 	if err != nil {
 		return nil, nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("getting signers v2 from tx %s", err.Error()))
 	}
@@ -703,18 +706,23 @@ func (c converter) SigningComponents(tx authsigning.Tx, metadata *ConstructionMe
 		// by checking if the signer at index i matches the pubkey at index
 		pubKey, err := c.ToSDK().PubKey(rosPubKeys[0])
 		if err != nil {
-			return nil, nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("while setting signatures %s", err.Error()))
+			return nil, nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("while checking pubkey %s", err.Error()))
 		}
-		if !bytes.Equal(pubKey.Address().Bytes(), signer.PubKey.Address()) {
+		if !bytes.Equal(pubKey.Address().Bytes(), signer) {
 			return nil, nil, crgerrs.WrapError(
 				crgerrs.ErrBadArgument,
 				fmt.Sprintf("public key at index %d does not match the expected transaction signer: %X <-> %X", i, rosPubKeys[i].Bytes, signer),
 			)
 		}
 
+		addr, err := c.ac.BytesToString(signer)
+		if err != nil {
+			return nil, nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("while converting to bech32 address: %s", err.Error()))
+		}
+
 		// set the signer data
 		signerData := authsigning.SignerData{
-			Address:       string(signer.PubKey.Address()),
+			Address:       addr,
 			ChainID:       metadata.ChainID,
 			AccountNumber: metadata.SignersData[i].AccountNumber,
 			Sequence:      metadata.SignersData[i].Sequence,
@@ -727,11 +735,8 @@ func (c converter) SigningComponents(tx authsigning.Tx, metadata *ConstructionMe
 			return nil, nil, crgerrs.WrapError(crgerrs.ErrUnknown, fmt.Sprintf("unable to sign tx: %s", err.Error()))
 		}
 
-		// set payload
-		signerAddress := sdk.AccAddress(signer.PubKey.Address()).String()
-
 		payloadsToSign[i] = &rosettatypes.SigningPayload{
-			AccountIdentifier: &rosettatypes.AccountIdentifier{Address: signerAddress},
+			AccountIdentifier: &rosettatypes.AccountIdentifier{Address: addr},
 			Bytes:             signBytes,
 			SignatureType:     rosettatypes.Ecdsa,
 		}
