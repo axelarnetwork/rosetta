@@ -14,6 +14,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
+	"github.com/cosmos/gogoproto/proto"
 
 	crgerrs "github.com/cosmos/rosetta/lib/errors"
 )
@@ -75,16 +76,17 @@ func parseSignerInfo(signerData signing2.SignerData) []*txv1beta1.SignerInfo {
 func parseTxMessages(tx authsigning.Tx) ([]*anypb.Any, error) {
 	var parsedTxMsgs []*anypb.Any
 
-	txPubKeys, err := tx.GetPubKeys()
-	if err != nil {
-		return nil, crgerrs.WrapError(crgerrs.ErrBadArgument, fmt.Sprintf("Getting pub keys from tx %s", err.Error()))
-	}
-	for _, txPubKey := range txPubKeys {
-		parsedPubKey := anypb.Any{
-			TypeUrl: sdk.MsgTypeURL(txPubKey),
-			Value:   txPubKey.Bytes(),
+	txMsgs := tx.GetMsgs()
+	for _, txMsg := range txMsgs {
+		msgBytes, err := proto.Marshal(txMsg)
+		if err != nil {
+			return nil, crgerrs.WrapError(crgerrs.ErrCodec, fmt.Sprintf("marshalling tx msg %s", err.Error()))
 		}
-		parsedTxMsgs = append(parsedTxMsgs, &parsedPubKey)
+		parsedMsg := anypb.Any{
+			TypeUrl: sdk.MsgTypeURL(txMsg),
+			Value:   msgBytes,
+		}
+		parsedTxMsgs = append(parsedTxMsgs, &parsedMsg)
 	}
 	return parsedTxMsgs, nil
 }
@@ -110,8 +112,8 @@ func parseAuthInfo(tx authsigning.Tx, signerData signing2.SignerData) *txv1beta1
 		Fee: &txv1beta1.Fee{
 			Amount:   parsedFeeAmount,
 			GasLimit: tx.GetGas(),
-			Payer:    string(tx.FeePayer()),
-			Granter:  string(tx.FeeGranter()),
+			// ignoring fee payer because we cannot get the exact value from the tx (tx.FeePayer() defaults to signer)
+			Granter: string(tx.FeeGranter()),
 		},
 	}
 }
