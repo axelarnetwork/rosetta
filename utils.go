@@ -80,7 +80,7 @@ func parseTxMessages(tx authsigning.Tx) ([]*anypb.Any, error) {
 	for _, txMsg := range txMsgs {
 		msgBytes, err := proto.Marshal(txMsg)
 		if err != nil {
-			return nil, crgerrs.WrapError(crgerrs.ErrCodec, fmt.Sprintf("marshalling tx msg %s", err.Error()))
+			return nil, crgerrs.WrapError(crgerrs.ErrCodec, fmt.Sprintf("marshaling tx msg %s", err.Error()))
 		}
 		parsedMsg := anypb.Any{
 			TypeUrl: sdk.MsgTypeURL(txMsg),
