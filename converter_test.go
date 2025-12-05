@@ -154,12 +154,12 @@ func (s *ConverterTestSuite) TestSignedTx() {
 
 func (s *ConverterTestSuite) TestOpsAndSigners() {
 	s.Run("success", func() {
-		addr1 := sdk.AccAddress("address1").String()
-		addr2 := sdk.AccAddress("address2").String()
+		addr1 := sdk.AccAddress("address1")
+		addr2 := sdk.AccAddress("address2")
 
 		msg := &bank.MsgSend{
-			FromAddress: addr1,
-			ToAddress:   addr2,
+			FromAddress: addr1.String(),
+			ToAddress:   addr2.String(),
 			Amount:      sdk.NewCoins(sdk.NewInt64Coin("test", 10)),
 		}
 
@@ -167,16 +167,18 @@ func (s *ConverterTestSuite) TestOpsAndSigners() {
 		s.Require().NoError(builder.SetMsgs(msg))
 
 		sdkTx := builder.GetTx()
-		_, err := s.txConf.TxEncoder()(sdkTx)
+		txBytes, err := s.txConf.TxEncoder()(sdkTx)
 		s.Require().NoError(err)
 
-		// s.Require().NoError(err)
-
-		_, err = sdkTx.GetSigners()
+		ops, signers, err := s.c.ToRosetta().OpsAndSigners(txBytes)
 		s.Require().NoError(err)
-		// s.Require().Equal(len(ops), len(sdkTx.GetMsgs())*len(signerAddrs), "operation number mismatch")
-		//
-		// s.Require().Equal(len(signers), len(signerAddrs), "signers number mismatch")
+
+		s.Require().Equal(1, len(ops), "should have one operation")
+		s.Require().Equal(sdk.MsgTypeURL(msg), ops[0].Type)
+		s.Require().Equal(addr1.String(), ops[0].Account.Address)
+
+		s.Require().Equal(1, len(signers), "should have one signer")
+		s.Require().Equal(addr1.String(), signers[0].Address, "signer address should match sender bech32 address")
 	})
 }
 

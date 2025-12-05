@@ -595,8 +595,12 @@ func (c converter) OpsAndSigners(txBytes []byte) (ops []*rosettatypes.Operation,
 	}
 
 	for _, signer := range txSigners {
+		addr, err := c.ir.SigningContext().AddressCodec().BytesToString(signer)
+		if err != nil {
+			return nil, nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("while converting signer bytes to bech32 address: %s", err.Error()))
+		}
 		signers = append(signers, &rosettatypes.AccountIdentifier{
-			Address: string(signer),
+			Address: addr,
 		})
 	}
 
