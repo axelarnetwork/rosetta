@@ -123,7 +123,7 @@ func NewConverter(cdc *codec.ProtoCodec, ir codectypes.InterfaceRegistry, cfg sd
 				return nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("while getting tx data %s", err.Error()))
 			}
 
-			bytesToSign, err := cfg.SignModeHandler().GetSignBytes(context.TODO(), signingv1beta1.SignMode(signing.SignMode_SIGN_MODE_DIRECT), parsedSignerData, *txData)
+			bytesToSign, err := cfg.SignModeHandler().GetSignBytes(context.TODO(), signingv1beta1.SignMode(signing.SignMode_SIGN_MODE_LEGACY_AMINO_JSON), parsedSignerData, *txData)
 			if err != nil {
 				return nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("while getting bytes to sign %s", err.Error()))
 			}
