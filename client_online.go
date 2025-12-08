@@ -219,6 +219,10 @@ func (c *Client) BlockByHash(ctx context.Context, hash string) (crgtypes.BlockRe
 }
 
 func (c *Client) BlockByHeight(ctx context.Context, height *int64) (crgtypes.BlockResponse, error) {
+	// default to nil (latest block) if height is 0
+	if height != nil && *height == 0 {
+		height = nil
+	}
 	block, err := c.tmRPC.Block(ctx, height)
 	if err != nil {
 		return crgtypes.BlockResponse{}, crgerrs.WrapError(crgerrs.ErrOnlineClient, fmt.Sprintf("getting block by height %s", err.Error()))
@@ -478,6 +482,10 @@ func (c *Client) ConstructionMetadataFromOptions(ctx context.Context, options ma
 }
 
 func (c *Client) blockTxs(ctx context.Context, height *int64) (crgtypes.BlockTransactionsResponse, error) {
+	// default to nil (latest block) if height is 0
+	if height != nil && *height == 0 {
+		height = nil
+	}
 	// get block info
 	blockInfo, err := c.tmRPC.Block(ctx, height)
 	if err != nil {
