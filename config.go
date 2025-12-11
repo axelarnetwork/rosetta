@@ -2,6 +2,8 @@ package rosetta
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/coinbase/rosetta-sdk-go/types"
@@ -67,7 +69,15 @@ const (
 	FlagPricesToSuggest         = "prices-to-suggest"
 	FlagPlugin                  = "plugin"
 	FlagBech32Prefix            = "bech32-prefix"
+	FlagSymbolDecimals          = "symbol-decimals"
 )
+
+// SymbolDecimal contains symbol decimal info for mapping base denoms to display symbols
+type SymbolDecimal struct {
+	Base    string
+	Symbol  string
+	Decimal int32
+}
 
 // Config defines the configuration of the rosetta server
 type Config struct {
@@ -105,6 +115,8 @@ type Config struct {
 	InterfaceRegistry codectypes.InterfaceRegistry
 	// Bech32Prefix defines the prefix used for bech32 addresses in the network.
 	Bech32Prefix string
+	// SymbolDecimals defines the mapping from base denom to display symbol with decimals
+	SymbolDecimals []SymbolDecimal
 }
 
 // NetworkIdentifier returns the network identifier given the configuration
@@ -241,6 +253,14 @@ func FromFlags(flags *pflag.FlagSet) (*Config, error) {
 	if err != nil {
 		return nil, crgerrs.WrapError(crgerrs.ErrConfig, fmt.Sprintf("while getting bech32Prefix flag %s", err.Error()))
 	}
+	symbolDecimalsStr, err := flags.GetString(FlagSymbolDecimals)
+	if err != nil {
+		return nil, crgerrs.WrapError(crgerrs.ErrConfig, fmt.Sprintf("while getting symbolDecimals flag %s", err.Error()))
+	}
+	symbolDecimals, err := parseSymbolDecimals(symbolDecimalsStr)
+	if err != nil {
+		return nil, crgerrs.WrapError(crgerrs.ErrConfig, fmt.Sprintf("while parsing symbolDecimals %s", err.Error()))
+	}
 
 	var prices sdk.DecCoins
 	if enableDefaultFeeSuggestion {
@@ -267,6 +287,7 @@ func FromFlags(flags *pflag.FlagSet) (*Config, error) {
 		DenomToSuggest:      denomToSuggest,
 		GasPrices:           prices,
 		Bech32Prefix:        bech32Prefix,
+		SymbolDecimals:      symbolDecimals,
 	}
 	err = conf.validate()
 	if err != nil {
@@ -314,4 +335,36 @@ func SetFlags(flags *pflag.FlagSet) {
 	flags.String(FlagPricesToSuggest, DefaultPrices, "default prices for fee suggestion")
 	flags.String(FlagPlugin, "", "plugin folder name")
 	flags.String(FlagBech32Prefix, "cosmos", "address bech32 prefix")
+	flags.String(FlagSymbolDecimals, "", "symbol decimals mapping (format: base:symbol:decimal, comma-separated, e.g. \"uaxl:AXL:6\")")
+}
+
+// parseSymbolDecimals parses a comma-separated string of base:symbol:decimal entries
+// e.g. "uaxl:AXL:6,uatom:ATOM:6" -> []SymbolDecimal{{Base: "uaxl", Symbol: "AXL", Decimal: 6}, ...}
+func parseSymbolDecimals(s string) ([]SymbolDecimal, error) {
+	if s == "" {
+		return nil, nil
+	}
+
+	var result []SymbolDecimal
+	entries := strings.Split(s, ",")
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		parts := strings.Split(entry, ":")
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid symbol-decimals entry %q: expected format base:symbol:decimal", entry)
+		}
+		decimal, err := strconv.ParseInt(strings.TrimSpace(parts[2]), 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid decimal in symbol-decimals entry %q: %w", entry, err)
+		}
+		result = append(result, SymbolDecimal{
+			Base:    strings.TrimSpace(parts[0]),
+			Symbol:  strings.TrimSpace(parts[1]),
+			Decimal: int32(decimal),
+		})
+	}
+	return result, nil
 }

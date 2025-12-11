@@ -3,6 +3,7 @@ package rosetta
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,6 +65,78 @@ func TestConfig_validateUrl(t *testing.T) {
 			got, err := c.validateURL(tt.tendermintRPC)
 			require.NoError(t, err)
 			require.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+func TestParseSymbolDecimals(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expected    []SymbolDecimal
+		expectError bool
+	}{
+		{
+			name:     "empty string",
+			input:    "",
+			expected: nil,
+		},
+		{
+			name:  "single entry",
+			input: "uaxl:AXL:6",
+			expected: []SymbolDecimal{
+				{Base: "uaxl", Symbol: "AXL", Decimal: 6},
+			},
+		},
+		{
+			name:  "multiple entries",
+			input: "uaxl:AXL:6,uatom:ATOM:6",
+			expected: []SymbolDecimal{
+				{Base: "uaxl", Symbol: "AXL", Decimal: 6},
+				{Base: "uatom", Symbol: "ATOM", Decimal: 6},
+			},
+		},
+		{
+			name:  "with spaces",
+			input: " uaxl : AXL : 6 , uatom : ATOM : 8 ",
+			expected: []SymbolDecimal{
+				{Base: "uaxl", Symbol: "AXL", Decimal: 6},
+				{Base: "uatom", Symbol: "ATOM", Decimal: 8},
+			},
+		},
+		{
+			name:  "trailing comma",
+			input: "uaxl:AXL:6,",
+			expected: []SymbolDecimal{
+				{Base: "uaxl", Symbol: "AXL", Decimal: 6},
+			},
+		},
+		{
+			name:        "invalid format - missing parts",
+			input:       "uaxl:AXL",
+			expectError: true,
+		},
+		{
+			name:        "invalid format - too many parts",
+			input:       "uaxl:AXL:6:extra",
+			expectError: true,
+		},
+		{
+			name:        "invalid decimal",
+			input:       "uaxl:AXL:notanumber",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseSymbolDecimals(tt.input)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
+			}
 		})
 	}
 }

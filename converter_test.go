@@ -43,7 +43,7 @@ func (s *ConverterTestSuite) SetupTest() {
 	// instantiate converter
 	cdc, ir := rosetta.MakeCodec()
 	txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
-	s.c = rosetta.NewConverter(cdc, ir, txConfig, address.NewBech32Codec("cosmos"))
+	s.c = rosetta.NewConverter(cdc, ir, txConfig, address.NewBech32Codec("cosmos"), nil)
 	// add utils
 	s.ir = ir
 	s.cdc = cdc
@@ -331,4 +331,155 @@ func (s *ConverterTestSuite) TestBalanceOps() {
 
 func TestConverterTestSuite(t *testing.T) {
 	suite.Run(t, new(ConverterTestSuite))
+}
+
+// SymbolDecimalsTestSuite tests the symbol decimals mapping functionality
+type SymbolDecimalsTestSuite struct {
+	suite.Suite
+}
+
+func (s *SymbolDecimalsTestSuite) TestAmountsWithSymbolDecimals() {
+	cdc, ir := rosetta.MakeCodec()
+	txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
+
+	symbolDecimals := []rosetta.SymbolDecimal{
+		{Base: "uaxl", Symbol: "AXL", Decimal: 6},
+		{Base: "uatom", Symbol: "ATOM", Decimal: 8},
+	}
+
+	c := rosetta.NewConverter(cdc, ir, txConfig, address.NewBech32Codec("cosmos"), symbolDecimals)
+
+	// ownedCoins: the actual balances the account holds
+	ownedCoins := []sdk.Coin{
+		sdk.NewInt64Coin("uaxl", 1000000),
+		sdk.NewInt64Coin("unknown", 500),
+		// note: account doesn't own any uatom
+	}
+
+	// availableCoins: all denominations that exist on the chain
+	// (the amounts here are just placeholders to satisfy sdk.NewCoins - only denoms matter)
+	availableCoins := sdk.NewCoins(
+		sdk.NewInt64Coin("uatom", 1),
+		sdk.NewInt64Coin("uaxl", 1),
+		sdk.NewInt64Coin("unknown", 1),
+	)
+
+	amounts := c.ToRosetta().Amounts(ownedCoins, availableCoins)
+
+	s.Require().Len(amounts, 3)
+
+	// Results are ordered by availableCoins iteration (sorted alphabetically by denom)
+
+	// uatom: not owned, so balance is 0, but still mapped to ATOM
+	s.Require().Equal("ATOM", amounts[0].Currency.Symbol)
+	s.Require().Equal(int32(8), amounts[0].Currency.Decimals)
+	s.Require().Equal("0", amounts[0].Value)
+
+	// uaxl: owned with 1000000, mapped to AXL
+	s.Require().Equal("AXL", amounts[1].Currency.Symbol)
+	s.Require().Equal(int32(6), amounts[1].Currency.Decimals)
+	s.Require().Equal("1000000", amounts[1].Value)
+
+	// unknown: owned with 500, no mapping so stays as-is
+	s.Require().Equal("unknown", amounts[2].Currency.Symbol)
+	s.Require().Equal(int32(0), amounts[2].Currency.Decimals)
+	s.Require().Equal("500", amounts[2].Value)
+}
+
+func (s *SymbolDecimalsTestSuite) TestBalanceOpsWithSymbolDecimals() {
+	cdc, ir := rosetta.MakeCodec()
+	txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
+
+	symbolDecimals := []rosetta.SymbolDecimal{
+		{Base: "uaxl", Symbol: "AXL", Decimal: 6},
+	}
+
+	c := rosetta.NewConverter(cdc, ir, txConfig, address.NewBech32Codec("cosmos"), symbolDecimals)
+
+	s.Run("coin_spent event with mapped denom", func() {
+		spentEvent := bank.NewCoinSpentEvent(
+			sdk.AccAddress("test"),
+			sdk.NewCoins(sdk.NewInt64Coin("uaxl", 1000000)),
+		)
+
+		ops := c.ToRosetta().BalanceOps("success", []abci.Event{(abci.Event)(spentEvent)})
+
+		s.Require().Len(ops, 1)
+		s.Require().Equal("AXL", ops[0].Amount.Currency.Symbol)
+		s.Require().Equal(int32(6), ops[0].Amount.Currency.Decimals)
+		s.Require().Equal("-1000000", ops[0].Amount.Value)
+	})
+
+	s.Run("coin_received event with mapped denom", func() {
+		receivedEvent := bank.NewCoinReceivedEvent(
+			sdk.AccAddress("test"),
+			sdk.NewCoins(sdk.NewInt64Coin("uaxl", 500000)),
+		)
+
+		ops := c.ToRosetta().BalanceOps("success", []abci.Event{(abci.Event)(receivedEvent)})
+
+		s.Require().Len(ops, 1)
+		s.Require().Equal("AXL", ops[0].Amount.Currency.Symbol)
+		s.Require().Equal(int32(6), ops[0].Amount.Currency.Decimals)
+		s.Require().Equal("500000", ops[0].Amount.Value)
+	})
+
+	s.Run("burn event with mapped denom", func() {
+		burnEvent := bank.NewCoinBurnEvent(
+			sdk.AccAddress("test"),
+			sdk.NewCoins(sdk.NewInt64Coin("uaxl", 250000)),
+		)
+
+		ops := c.ToRosetta().BalanceOps("success", []abci.Event{(abci.Event)(burnEvent)})
+
+		s.Require().Len(ops, 1)
+		s.Require().Equal("AXL", ops[0].Amount.Currency.Symbol)
+		s.Require().Equal(int32(6), ops[0].Amount.Currency.Decimals)
+		s.Require().Equal("250000", ops[0].Amount.Value) // burn is not negated (sent to burner address)
+	})
+
+	s.Run("event with unmapped denom stays as-is", func() {
+		spentEvent := bank.NewCoinSpentEvent(
+			sdk.AccAddress("test"),
+			sdk.NewCoins(sdk.NewInt64Coin("unknown", 100)),
+		)
+
+		ops := c.ToRosetta().BalanceOps("success", []abci.Event{(abci.Event)(spentEvent)})
+
+		s.Require().Len(ops, 1)
+		s.Require().Equal("unknown", ops[0].Amount.Currency.Symbol)
+		s.Require().Equal(int32(0), ops[0].Amount.Currency.Decimals)
+		s.Require().Equal("-100", ops[0].Amount.Value)
+	})
+}
+
+func (s *SymbolDecimalsTestSuite) TestNoSymbolDecimals() {
+	cdc, ir := rosetta.MakeCodec()
+	txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
+
+	// Create converter without symbol decimals
+	c := rosetta.NewConverter(cdc, ir, txConfig, address.NewBech32Codec("cosmos"), nil)
+
+	// ownedCoins: the actual balances the account holds
+	ownedCoins := []sdk.Coin{
+		sdk.NewInt64Coin("uaxl", 1000000),
+	}
+
+	// availableCoins: all denominations that exist on the chain
+	// (the amounts here are just placeholders to satisfy sdk.NewCoins - only denoms matter)
+	availableCoins := sdk.NewCoins(
+		sdk.NewInt64Coin("uaxl", 1),
+	)
+
+	amounts := c.ToRosetta().Amounts(ownedCoins, availableCoins)
+
+	s.Require().Len(amounts, 1)
+	// Without symbol decimals, denom should remain unchanged
+	s.Require().Equal("uaxl", amounts[0].Currency.Symbol)
+	s.Require().Equal(int32(0), amounts[0].Currency.Decimals)
+	s.Require().Equal("1000000", amounts[0].Value)
+}
+
+func TestSymbolDecimalsTestSuite(t *testing.T) {
+	suite.Run(t, new(SymbolDecimalsTestSuite))
 }

@@ -100,6 +100,7 @@ type ToSDKConverter interface {
 }
 
 type converter struct {
+	denomUnits      map[string]SymbolDecimal
 	newTxBuilder    func() sdkclient.TxBuilder
 	txBuilderFromTx func(tx sdk.Tx) (sdkclient.TxBuilder, error)
 	txDecode        sdk.TxDecoder
@@ -110,8 +111,14 @@ type converter struct {
 	ac              address.Codec
 }
 
-func NewConverter(cdc *codec.ProtoCodec, ir codectypes.InterfaceRegistry, cfg sdkclient.TxConfig, ac address.Codec) Converter {
+func NewConverter(cdc *codec.ProtoCodec, ir codectypes.InterfaceRegistry, cfg sdkclient.TxConfig, ac address.Codec, symbolDecimals []SymbolDecimal) Converter {
+	denomUnits := make(map[string]SymbolDecimal)
+	for _, sd := range symbolDecimals {
+		denomUnits[sd.Base] = sd
+	}
+
 	return converter{
+		denomUnits:      denomUnits,
 		newTxBuilder:    cfg.NewTxBuilder,
 		txBuilderFromTx: cfg.WrapTxBuilder,
 		txDecode:        cfg.TxDecoder(),
@@ -323,7 +330,7 @@ func (c converter) BalanceOps(status string, events []abci.Event) []*rosettatype
 	var ops []*rosettatypes.Operation
 
 	for _, e := range events {
-		balanceOps, ok := sdkEventToBalanceOperations(status, e)
+		balanceOps, ok := c.sdkEventToBalanceOperations(status, e)
 		if !ok {
 			continue
 		}
@@ -333,11 +340,25 @@ func (c converter) BalanceOps(status string, events []abci.Event) []*rosettatype
 	return ops
 }
 
+// toCurrency converts a denom to a rosetta Currency, applying symbol decimals mapping if configured
+func (c converter) toCurrency(denom string) *rosettatypes.Currency {
+	if sd, ok := c.denomUnits[denom]; ok {
+		return &rosettatypes.Currency{
+			Symbol:   sd.Symbol,
+			Decimals: sd.Decimal,
+		}
+	}
+	return &rosettatypes.Currency{
+		Symbol:   denom,
+		Decimals: 0,
+	}
+}
+
 // sdkEventToBalanceOperations converts an event to a rosetta balance operation
 // it will panic if the event is malformed because it might mean the sdk spec
 // has changed and rosetta needs to reflect those changes too.
 // The balance operations are multiple, one for each denom.
-func sdkEventToBalanceOperations(status string, event abci.Event) (operations []*rosettatypes.Operation, isBalanceEvent bool) {
+func (c converter) sdkEventToBalanceOperations(status string, event abci.Event) (operations []*rosettatypes.Operation, isBalanceEvent bool) {
 	var (
 		accountIdentifier string
 		coinChange        sdk.Coins
@@ -398,11 +419,8 @@ func sdkEventToBalanceOperations(status string, event abci.Event) (operations []
 			Status:  &status,
 			Account: &rosettatypes.AccountIdentifier{Address: accountIdentifier},
 			Amount: &rosettatypes.Amount{
-				Value: value,
-				Currency: &rosettatypes.Currency{
-					Symbol:   coin.Denom,
-					Decimals: 0,
-				},
+				Value:    value,
+				Currency: c.toCurrency(coin.Denom),
 			},
 		}
 
@@ -424,18 +442,14 @@ func (c converter) Amounts(ownedCoins []sdk.Coin, availableCoins sdk.Coins) []*r
 		value, owned := ownedCoinsMap[coin.Denom]
 		if !owned {
 			amounts[i] = &rosettatypes.Amount{
-				Value: sdkmath.NewInt(0).String(),
-				Currency: &rosettatypes.Currency{
-					Symbol: coin.Denom,
-				},
+				Value:    sdkmath.NewInt(0).String(),
+				Currency: c.toCurrency(coin.Denom),
 			}
 			continue
 		}
 		amounts[i] = &rosettatypes.Amount{
-			Value: value.String(),
-			Currency: &rosettatypes.Currency{
-				Symbol: coin.Denom,
-			},
+			Value:    value.String(),
+			Currency: c.toCurrency(coin.Denom),
 		}
 	}
 

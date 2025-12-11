@@ -89,7 +89,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		bank:                nil,
 		tmRPC:               nil,
 		version:             fmt.Sprintf("%s/%s", info.AppName, v),
-		converter:           NewConverter(cfg.Codec, cfg.InterfaceRegistry, txConfig, address.NewBech32Codec(cfg.Bech32Prefix)),
+		converter:           NewConverter(cfg.Codec, cfg.InterfaceRegistry, txConfig, address.NewBech32Codec(cfg.Bech32Prefix), cfg.SymbolDecimals),
 	}, nil
 }
 
