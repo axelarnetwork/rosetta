@@ -47,6 +47,8 @@ type Client interface {
 	Balances(ctx context.Context, addr string, height *int64) ([]*types.Amount, error)
 	// AccountSequence fetches the account sequence number
 	AccountSequence(ctx context.Context, addr string, height *int64) (uint64, error)
+	// ToCurrency converts a denom to a rosetta Currency with symbol mapping
+	ToCurrency(denom string) *types.Currency
 	// BlockByHash gets a block and its transaction at the provided height
 	BlockByHash(ctx context.Context, hash string) (BlockResponse, error)
 	// BlockByHeight gets a block given its height, if height is nil then last block is returned

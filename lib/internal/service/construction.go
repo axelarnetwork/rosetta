@@ -101,11 +101,8 @@ func (on OnlineNetwork) ConstructionMetadata(ctx context.Context, request *types
 		gas := sdkmath.NewIntFromUint64(uint64(gasLimit))
 
 		suggestedFee := types.Amount{
-			Value: strconv.FormatInt(price.Amount.MulInt64(gas.Int64()).Ceil().TruncateInt64(), 10),
-			Currency: &(types.Currency{
-				Symbol:   price.Denom,
-				Decimals: 0,
-			}),
+			Value:    strconv.FormatInt(price.Amount.MulInt64(gas.Int64()).Ceil().TruncateInt64(), 10),
+			Currency: on.client.ToCurrency(price.Denom),
 		}
 		response.SuggestedFee = []*types.Amount{&suggestedFee}
 	}

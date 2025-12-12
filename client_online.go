@@ -190,6 +190,11 @@ func (c *Client) AccountSequence(ctx context.Context, addr string, height *int64
 	return signerData.Sequence, nil
 }
 
+// ToCurrency converts a denom to a rosetta Currency with symbol mapping
+func (c *Client) ToCurrency(denom string) *rosettatypes.Currency {
+	return c.converter.ToRosetta().ToCurrency(denom)
+}
+
 func (c *Client) Balances(ctx context.Context, addr string, height *int64) ([]*rosettatypes.Amount, error) {
 	if height != nil {
 		strHeight := strconv.FormatInt(*height, 10)

@@ -76,6 +76,8 @@ type ToRosettaConverter interface {
 	BalanceOps(status string, events []abci.Event) []*rosettatypes.Operation
 	// SyncStatus converts a CometBFT status to sync status
 	SyncStatus(status *tmcoretypes.ResultStatus) *rosettatypes.SyncStatus
+	// ToCurrency converts a denom to a rosetta Currency with symbol mapping
+	ToCurrency(denom string) *rosettatypes.Currency
 	// Peers converts CometBFT peers to rosetta
 	Peers(peers []tmcoretypes.Peer) []*rosettatypes.Peer
 }
@@ -339,8 +341,8 @@ func (c converter) BalanceOps(status string, events []abci.Event) []*rosettatype
 	return ops
 }
 
-// toCurrency converts a denom to a rosetta Currency, applying symbol decimals mapping if configured
-func (c converter) toCurrency(denom string) *rosettatypes.Currency {
+// ToCurrency converts a denom to a rosetta Currency, applying symbol decimals mapping if configured
+func (c converter) ToCurrency(denom string) *rosettatypes.Currency {
 	if sd, ok := c.denomUnits[denom]; ok {
 		return &rosettatypes.Currency{
 			Symbol:   sd.Symbol,
@@ -419,7 +421,7 @@ func (c converter) sdkEventToBalanceOperations(status string, event abci.Event) 
 			Account: &rosettatypes.AccountIdentifier{Address: accountIdentifier},
 			Amount: &rosettatypes.Amount{
 				Value:    value,
-				Currency: c.toCurrency(coin.Denom),
+				Currency: c.ToCurrency(coin.Denom),
 			},
 		}
 
@@ -435,7 +437,7 @@ func (c converter) Amounts(ownedCoins []sdk.Coin) []*rosettatypes.Amount {
 	for i, coin := range ownedCoins {
 		amounts[i] = &rosettatypes.Amount{
 			Value:    coin.Amount.String(),
-			Currency: c.toCurrency(coin.Denom),
+			Currency: c.ToCurrency(coin.Denom),
 		}
 	}
 
