@@ -351,29 +351,22 @@ func (s *SymbolDecimalsTestSuite) TestAmountsWithSymbolDecimals() {
 
 	// ownedCoins: the actual balances the account holds
 	ownedCoins := []sdk.Coin{
+		sdk.NewInt64Coin("uatom", 2000000),
 		sdk.NewInt64Coin("uaxl", 1000000),
 		sdk.NewInt64Coin("unknown", 500),
-		// note: account doesn't own any uatom
+		sdk.NewInt64Coin("ibc/ABC123", 999), // IBC token without mapping
 	}
 
-	// availableCoins: all denominations that exist on the chain
-	// (the amounts here are just placeholders to satisfy sdk.NewCoins - only denoms matter)
-	availableCoins := sdk.NewCoins(
-		sdk.NewInt64Coin("uatom", 1),
-		sdk.NewInt64Coin("uaxl", 1),
-		sdk.NewInt64Coin("unknown", 1),
-	)
+	amounts := c.ToRosetta().Amounts(ownedCoins)
 
-	amounts := c.ToRosetta().Amounts(ownedCoins, availableCoins)
+	s.Require().Len(amounts, 4)
 
-	s.Require().Len(amounts, 3)
+	// Results are ordered by ownedCoins order
 
-	// Results are ordered by availableCoins iteration (sorted alphabetically by denom)
-
-	// uatom: not owned, so balance is 0, but still mapped to ATOM
+	// uatom: owned with 2000000, mapped to ATOM
 	s.Require().Equal("ATOM", amounts[0].Currency.Symbol)
 	s.Require().Equal(int32(8), amounts[0].Currency.Decimals)
-	s.Require().Equal("0", amounts[0].Value)
+	s.Require().Equal("2000000", amounts[0].Value)
 
 	// uaxl: owned with 1000000, mapped to AXL
 	s.Require().Equal("AXL", amounts[1].Currency.Symbol)
@@ -384,6 +377,11 @@ func (s *SymbolDecimalsTestSuite) TestAmountsWithSymbolDecimals() {
 	s.Require().Equal("unknown", amounts[2].Currency.Symbol)
 	s.Require().Equal(int32(0), amounts[2].Currency.Decimals)
 	s.Require().Equal("500", amounts[2].Value)
+
+	// ibc/ABC123: owned with 999, no mapping so stays as-is
+	s.Require().Equal("ibc/ABC123", amounts[3].Currency.Symbol)
+	s.Require().Equal(int32(0), amounts[3].Currency.Decimals)
+	s.Require().Equal("999", amounts[3].Value)
 }
 
 func (s *SymbolDecimalsTestSuite) TestBalanceOpsWithSymbolDecimals() {
@@ -465,13 +463,7 @@ func (s *SymbolDecimalsTestSuite) TestNoSymbolDecimals() {
 		sdk.NewInt64Coin("uaxl", 1000000),
 	}
 
-	// availableCoins: all denominations that exist on the chain
-	// (the amounts here are just placeholders to satisfy sdk.NewCoins - only denoms matter)
-	availableCoins := sdk.NewCoins(
-		sdk.NewInt64Coin("uaxl", 1),
-	)
-
-	amounts := c.ToRosetta().Amounts(ownedCoins, availableCoins)
+	amounts := c.ToRosetta().Amounts(ownedCoins)
 
 	s.Require().Len(amounts, 1)
 	// Without symbol decimals, denom should remain unchanged

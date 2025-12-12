@@ -33,7 +33,6 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 		if err != nil {
 			return nil, errors.ToRosetta(err)
 		}
-		height = block.Block.Index
 	case request.BlockIdentifier.Index != nil:
 		height = *request.BlockIdentifier.Index
 		block, err = on.client.BlockByHeight(ctx, &height)
@@ -42,15 +41,25 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 		}
 	}
 
+	height = block.Block.Index
+
 	accountCoins, err := on.client.Balances(ctx, request.AccountIdentifier.Address, &height)
 	if err != nil {
 		return nil, errors.ToRosetta(err)
 	}
 
+	// fetch account sequence number, default to 0 if account doesn't exist
+	sequence, err := on.client.AccountSequence(ctx, request.AccountIdentifier.Address, &height)
+	if err != nil {
+		sequence = 0
+	}
+
 	return &types.AccountBalanceResponse{
 		BlockIdentifier: block.Block,
 		Balances:        accountCoins,
-		Metadata:        nil,
+		Metadata: map[string]interface{}{
+			"sequence_number": sequence,
+		},
 	}, nil
 }
 

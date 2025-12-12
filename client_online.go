@@ -21,7 +21,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	grpctypes "github.com/cosmos/cosmos-sdk/types/grpc"
-	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/version"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	auth "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -183,6 +182,14 @@ func (c *Client) accountInfo(ctx context.Context, addr string, height *int64) (*
 	return signerData, nil
 }
 
+func (c *Client) AccountSequence(ctx context.Context, addr string, height *int64) (uint64, error) {
+	signerData, err := c.accountInfo(ctx, addr, height)
+	if err != nil {
+		return 0, err
+	}
+	return signerData.Sequence, nil
+}
+
 func (c *Client) Balances(ctx context.Context, addr string, height *int64) ([]*rosettatypes.Amount, error) {
 	if height != nil {
 		strHeight := strconv.FormatInt(*height, 10)
@@ -196,12 +203,7 @@ func (c *Client) Balances(ctx context.Context, addr string, height *int64) ([]*r
 		return nil, crgerrs.FromGRPCToRosettaError(err)
 	}
 
-	availableCoins, err := c.coins(ctx)
-	if err != nil {
-		return nil, crgerrs.FromGRPCToRosettaError(err)
-	}
-
-	return c.converter.ToRosetta().Amounts(balance.Balances, availableCoins), nil
+	return c.converter.ToRosetta().Amounts(balance.Balances), nil
 }
 
 func (c *Client) BlockByHash(ctx context.Context, hash string) (crgtypes.BlockResponse, error) {
@@ -249,34 +251,6 @@ func (c *Client) BlockTransactionsByHeight(ctx context.Context, height *int64) (
 	return blockTxResp, nil
 }
 
-// Coins f etches the existing coins in the application
-func (c *Client) coins(ctx context.Context) (sdk.Coins, error) {
-	var result sdk.Coins
-
-	supply, err := c.bank.TotalSupply(ctx, &bank.QueryTotalSupplyRequest{})
-	if err != nil {
-		return nil, crgerrs.WrapError(crgerrs.ErrOnlineClient, fmt.Sprintf("getting coins supply %s", err.Error()))
-	}
-
-	pages := supply.GetPagination().GetTotal()
-	for i := uint64(0); i < pages; i++ {
-		// get next key
-		page := supply.GetPagination()
-		if page == nil {
-			return nil, crgerrs.WrapError(crgerrs.ErrOnlineClient, fmt.Sprintf("getting supply pagination %s", err.Error()))
-		}
-		nextKey := page.GetNextKey()
-
-		supply, err = c.bank.TotalSupply(ctx, &bank.QueryTotalSupplyRequest{Pagination: &query.PageRequest{Key: nextKey}})
-		if err != nil {
-			return nil, crgerrs.WrapError(crgerrs.ErrOnlineClient, fmt.Sprintf("getting supply from bank %s", err.Error()))
-		}
-
-		result = append(result[:0], supply.Supply[:]...)
-	}
-
-	return result, nil
-}
 
 func (c *Client) TxOperationsAndSignersAccountIdentifiers(signed bool, txBytes []byte) (ops []*rosettatypes.Operation, signers []*rosettatypes.AccountIdentifier, err error) {
 	switch signed {

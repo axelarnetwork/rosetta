@@ -16,7 +16,6 @@ import (
 
 	signingv1beta1 "cosmossdk.io/api/cosmos/tx/signing/v1beta1"
 	"cosmossdk.io/core/address"
-	sdkmath "cosmossdk.io/math"
 
 	sdkclient "github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -58,7 +57,7 @@ type ToRosettaConverter interface {
 	// BeginBlockToTx converts the given begin block hash to rosetta transaction hash
 	FinalizeBlockTxHash(blockHash []byte) string
 	// Amounts converts sdk.Coins to rosetta.Amounts
-	Amounts(ownedCoins []sdk.Coin, availableCoins sdk.Coins) []*rosettatypes.Amount
+	Amounts(ownedCoins []sdk.Coin) []*rosettatypes.Amount
 	// Ops converts an sdk.Msg to rosetta operations
 	Ops(status string, msg sdk.Msg) ([]*rosettatypes.Operation, error)
 	// OpsAndSigners takes raw transaction bytes and returns rosetta operations and the expected signers
@@ -430,25 +429,12 @@ func (c converter) sdkEventToBalanceOperations(status string, event abci.Event) 
 }
 
 // Amounts converts []sdk.Coin to rosetta amounts
-func (c converter) Amounts(ownedCoins []sdk.Coin, availableCoins sdk.Coins) []*rosettatypes.Amount {
-	amounts := make([]*rosettatypes.Amount, len(availableCoins))
-	ownedCoinsMap := make(map[string]sdkmath.Int, len(availableCoins))
+func (c converter) Amounts(ownedCoins []sdk.Coin) []*rosettatypes.Amount {
+	amounts := make([]*rosettatypes.Amount, len(ownedCoins))
 
-	for _, ownedCoin := range ownedCoins {
-		ownedCoinsMap[ownedCoin.Denom] = ownedCoin.Amount
-	}
-
-	for i, coin := range availableCoins {
-		value, owned := ownedCoinsMap[coin.Denom]
-		if !owned {
-			amounts[i] = &rosettatypes.Amount{
-				Value:    sdkmath.NewInt(0).String(),
-				Currency: c.toCurrency(coin.Denom),
-			}
-			continue
-		}
+	for i, coin := range ownedCoins {
 		amounts[i] = &rosettatypes.Amount{
-			Value:    value.String(),
+			Value:    coin.Amount.String(),
 			Currency: c.toCurrency(coin.Denom),
 		}
 	}
