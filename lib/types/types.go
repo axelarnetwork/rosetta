@@ -2,11 +2,72 @@ package types
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/coinbase/rosetta-sdk-go/types"
 
 	"github.com/cosmos/rosetta-sdk-go/server"
 )
+
+// BalanceType used to query different account balance
+type BalanceType int
+
+const (
+	Unrecognized BalanceType = iota
+	AvailableBalance
+	PendingRewards
+	UnbondingBalance
+	DelegatedBalance
+)
+
+func (i BalanceType) String() string {
+	switch i {
+	case AvailableBalance:
+		return "available_balance"
+	case PendingRewards:
+		return "pending_rewards"
+	case UnbondingBalance:
+		return "unbonding_balance"
+	case DelegatedBalance:
+		return "delegated_balance"
+	default:
+		return "unrecognized_balance_type"
+	}
+}
+
+func ParseBalanceType(s string) (BalanceType, error) {
+	switch strings.ToLower(s) {
+	case strings.ToLower(AvailableBalance.String()):
+		return AvailableBalance, nil
+	case strings.ToLower(PendingRewards.String()):
+		return PendingRewards, nil
+	case strings.ToLower(UnbondingBalance.String()):
+		return UnbondingBalance, nil
+	case strings.ToLower(DelegatedBalance.String()):
+		return DelegatedBalance, nil
+	default:
+		return Unrecognized, fmt.Errorf("unrecognized balance type option")
+	}
+}
+
+// UnbondingDelegationMetaData attaches the validator address and completion time to the unbonding delegation
+func UnbondingDelegationMetaData(validator string, completionTime time.Time) map[string]interface{} {
+	return map[string]interface{}{
+		"balance_type":      UnbondingBalance.String(),
+		"completion_time":   completionTime.String(),
+		"validator_address": validator,
+	}
+}
+
+// BalanceMetaData attaches the validator address to balance response
+func BalanceMetaData(balanceType BalanceType, validator string) map[string]interface{} {
+	return map[string]interface{}{
+		"balance_type":      balanceType.String(),
+		"validator_address": validator,
+	}
+}
 
 // SpecVersion defines the specification of rosetta
 const SpecVersion = ""
@@ -49,6 +110,13 @@ type Client interface {
 	AccountSequence(ctx context.Context, addr string, height *int64) (uint64, error)
 	// ToCurrency converts a denom to a rosetta Currency with symbol mapping
 	ToCurrency(denom string) *types.Currency
+	// Delegations fetches the delegations of the given delegator address
+	Delegations(ctx context.Context, delegator string, height *int64) ([]*types.Amount, error)
+	// UnbondingDelegations fetches the unbonding delegations of the given delegator address
+	UnbondingDelegations(ctx context.Context, delegator string, height *int64) ([]*types.Amount, error)
+	// Rewards fetches the pending rewards of the given delegator address
+	// If validator is empty, returns all rewards with metadata. If specified, returns rewards for that validator.
+	Rewards(ctx context.Context, delegator string, validator string, height *int64) ([]*types.Amount, error)
 	// BlockByHash gets a block and its transaction at the provided height
 	BlockByHash(ctx context.Context, hash string) (BlockResponse, error)
 	// BlockByHeight gets a block given its height, if height is nil then last block is returned

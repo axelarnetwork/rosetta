@@ -25,6 +25,8 @@ import (
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	auth "github.com/cosmos/cosmos-sdk/x/auth/types"
 	bank "github.com/cosmos/cosmos-sdk/x/bank/types"
+	distr "github.com/cosmos/cosmos-sdk/x/distribution/types"
+	staking "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	crgerrs "github.com/cosmos/rosetta/lib/errors"
 	crgtypes "github.com/cosmos/rosetta/lib/types"
@@ -44,9 +46,11 @@ type Client struct {
 
 	config *Config
 
-	auth  auth.QueryClient
-	bank  bank.QueryClient
-	tmRPC tmrpc.Client
+	auth         auth.QueryClient
+	bank         bank.QueryClient
+	distribution distr.QueryClient
+	staking      staking.QueryClient
+	tmRPC        tmrpc.Client
 
 	version string
 
@@ -86,6 +90,8 @@ func NewClient(cfg *Config) (*Client, error) {
 		config:              cfg,
 		auth:                nil,
 		bank:                nil,
+		distribution:        nil,
+		staking:             nil,
 		tmRPC:               nil,
 		version:             fmt.Sprintf("%s/%s", info.AppName, v),
 		converter:           NewConverter(cfg.Codec, cfg.InterfaceRegistry, txConfig, address.NewBech32Codec(cfg.Bech32Prefix), cfg.SymbolDecimals),
@@ -108,9 +114,13 @@ func (c *Client) Bootstrap() error {
 
 	authClient := auth.NewQueryClient(grpcConn)
 	bankClient := bank.NewQueryClient(grpcConn)
+	distrClient := distr.NewQueryClient(grpcConn)
+	stakingClient := staking.NewQueryClient(grpcConn)
 
 	c.auth = authClient
 	c.bank = bankClient
+	c.distribution = distrClient
+	c.staking = stakingClient
 	c.tmRPC = tmRPC
 
 	return nil
@@ -193,6 +203,99 @@ func (c *Client) AccountSequence(ctx context.Context, addr string, height *int64
 // ToCurrency converts a denom to a rosetta Currency with symbol mapping
 func (c *Client) ToCurrency(denom string) *rosettatypes.Currency {
 	return c.converter.ToRosetta().ToCurrency(denom)
+}
+
+// Delegations fetches the delegations of the given delegator address
+func (c *Client) Delegations(ctx context.Context, delegator string, height *int64) ([]*rosettatypes.Amount, error) {
+	if height != nil {
+		strHeight := strconv.FormatInt(*height, 10)
+		ctx = metadata.AppendToOutgoingContext(ctx, grpctypes.GRPCBlockHeightHeader, strHeight)
+	}
+
+	res, err := c.staking.DelegatorDelegations(ctx, &staking.QueryDelegatorDelegationsRequest{
+		DelegatorAddr: delegator,
+	})
+	if err != nil {
+		return nil, crgerrs.FromGRPCToRosettaError(err)
+	}
+
+	var amounts []*rosettatypes.Amount
+	for _, delegation := range res.DelegationResponses {
+		validator := delegation.Delegation.ValidatorAddress
+		meta := crgtypes.BalanceMetaData(crgtypes.DelegatedBalance, validator)
+
+		amounts = append(amounts, c.converter.ToRosetta().Amounts(sdk.NewCoins(delegation.Balance), meta)...)
+	}
+
+	return amounts, nil
+}
+
+// UnbondingDelegations fetches the unbonding delegations of the given delegator address
+func (c *Client) UnbondingDelegations(ctx context.Context, delegator string, height *int64) ([]*rosettatypes.Amount, error) {
+	if height != nil {
+		strHeight := strconv.FormatInt(*height, 10)
+		ctx = metadata.AppendToOutgoingContext(ctx, grpctypes.GRPCBlockHeightHeader, strHeight)
+	}
+
+	res, err := c.staking.DelegatorUnbondingDelegations(ctx, &staking.QueryDelegatorUnbondingDelegationsRequest{
+		DelegatorAddr: delegator,
+	})
+	if err != nil {
+		return nil, crgerrs.FromGRPCToRosettaError(err)
+	}
+
+	var amounts []*rosettatypes.Amount
+	for _, unbondingDelegation := range res.UnbondingResponses {
+		for _, entry := range unbondingDelegation.Entries {
+			meta := crgtypes.UnbondingDelegationMetaData(unbondingDelegation.ValidatorAddress, entry.CompletionTime)
+			coins := sdk.NewCoins(sdk.NewCoin("uaxl", entry.Balance))
+
+			amounts = append(amounts, c.converter.ToRosetta().Amounts(coins, meta)...)
+		}
+	}
+
+	return amounts, nil
+}
+
+// Rewards fetches the pending rewards of the given delegator address.
+// If validator is empty, returns all rewards with metadata. If specified, returns rewards for that validator.
+func (c *Client) Rewards(ctx context.Context, delegator string, validator string, height *int64) ([]*rosettatypes.Amount, error) {
+	if height != nil {
+		strHeight := strconv.FormatInt(*height, 10)
+		ctx = metadata.AppendToOutgoingContext(ctx, grpctypes.GRPCBlockHeightHeader, strHeight)
+	}
+
+	var amounts []*rosettatypes.Amount
+	switch validator {
+	case "":
+		res, err := c.distribution.DelegationTotalRewards(ctx, &distr.QueryDelegationTotalRewardsRequest{
+			DelegatorAddress: delegator,
+		})
+		if err != nil {
+			return nil, crgerrs.FromGRPCToRosettaError(err)
+		}
+
+		for _, reward := range res.Rewards {
+			val := reward.ValidatorAddress
+			meta := crgtypes.BalanceMetaData(crgtypes.PendingRewards, val)
+
+			coins, _ := reward.Reward.TruncateDecimal()
+			amounts = append(amounts, c.converter.ToRosetta().Amounts(coins, meta)...)
+		}
+
+	default:
+		res, err := c.distribution.DelegationRewards(ctx, &distr.QueryDelegationRewardsRequest{
+			DelegatorAddress: delegator,
+			ValidatorAddress: validator,
+		})
+		if err != nil {
+			return nil, crgerrs.FromGRPCToRosettaError(err)
+		}
+		coins, _ := res.Rewards.TruncateDecimal()
+		amounts = append(amounts, c.converter.ToRosetta().Amounts(coins)...)
+	}
+
+	return amounts, nil
 }
 
 func (c *Client) Balances(ctx context.Context, addr string, height *int64) ([]*rosettatypes.Amount, error) {

@@ -56,8 +56,8 @@ type ToRosettaConverter interface {
 	BlockResponse(block *tmcoretypes.ResultBlock) crgtypes.BlockResponse
 	// BeginBlockToTx converts the given begin block hash to rosetta transaction hash
 	FinalizeBlockTxHash(blockHash []byte) string
-	// Amounts converts sdk.Coins to rosetta.Amounts
-	Amounts(ownedCoins []sdk.Coin) []*rosettatypes.Amount
+	// Amounts converts sdk.Coins to rosetta.Amounts, with optional metadata
+	Amounts(ownedCoins []sdk.Coin, metadata ...map[string]interface{}) []*rosettatypes.Amount
 	// Ops converts an sdk.Msg to rosetta operations
 	Ops(status string, msg sdk.Msg) ([]*rosettatypes.Operation, error)
 	// OpsAndSigners takes raw transaction bytes and returns rosetta operations and the expected signers
@@ -430,15 +430,19 @@ func (c converter) sdkEventToBalanceOperations(status string, event abci.Event) 
 	return operations, true
 }
 
-// Amounts converts []sdk.Coin to rosetta amounts
-func (c converter) Amounts(ownedCoins []sdk.Coin) []*rosettatypes.Amount {
+// Amounts converts []sdk.Coin to rosetta amounts, with optional metadata
+func (c converter) Amounts(ownedCoins []sdk.Coin, metadata ...map[string]interface{}) []*rosettatypes.Amount {
 	amounts := make([]*rosettatypes.Amount, len(ownedCoins))
 
 	for i, coin := range ownedCoins {
-		amounts[i] = &rosettatypes.Amount{
+		amount := &rosettatypes.Amount{
 			Value:    coin.Amount.String(),
 			Currency: c.ToCurrency(coin.Denom),
 		}
+		if len(metadata) > 0 {
+			amount.Metadata = metadata[0]
+		}
+		amounts[i] = amount
 	}
 
 	return amounts

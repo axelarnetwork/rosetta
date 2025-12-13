@@ -472,6 +472,36 @@ func (s *SymbolDecimalsTestSuite) TestNoSymbolDecimals() {
 	s.Require().Equal("1000000", amounts[0].Value)
 }
 
+func (s *SymbolDecimalsTestSuite) TestAmountsWithMetadata() {
+	cdc, ir := rosetta.MakeCodec()
+	txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
+
+	symbolDecimals := []rosetta.SymbolDecimal{
+		{Base: "uaxl", Symbol: "AXL", Decimal: 6},
+	}
+
+	c := rosetta.NewConverter(cdc, ir, txConfig, address.NewBech32Codec("axelar"), symbolDecimals)
+
+	ownedCoins := []sdk.Coin{
+		sdk.NewInt64Coin("uaxl", 1000000),
+	}
+
+	metadata := map[string]interface{}{
+		"balance_type":      "delegated_balance",
+		"validator_address": "axelarvaloper1abc",
+	}
+
+	amounts := c.ToRosetta().Amounts(ownedCoins, metadata)
+
+	s.Require().Len(amounts, 1)
+	s.Require().Equal("AXL", amounts[0].Currency.Symbol)
+	s.Require().Equal(int32(6), amounts[0].Currency.Decimals)
+	s.Require().Equal("1000000", amounts[0].Value)
+	s.Require().NotNil(amounts[0].Metadata)
+	s.Require().Equal("delegated_balance", amounts[0].Metadata["balance_type"])
+	s.Require().Equal("axelarvaloper1abc", amounts[0].Metadata["validator_address"])
+}
+
 func TestSymbolDecimalsTestSuite(t *testing.T) {
 	suite.Run(t, new(SymbolDecimalsTestSuite))
 }
