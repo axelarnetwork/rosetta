@@ -329,6 +329,61 @@ func (s *ConverterTestSuite) TestBalanceOps() {
 	})
 }
 
+func (s *ConverterTestSuite) TestTxWithMemo() {
+	addr1 := sdk.AccAddress("address1")
+	addr2 := sdk.AccAddress("address2")
+
+	msg := &bank.MsgSend{
+		FromAddress: addr1.String(),
+		ToAddress:   addr2.String(),
+		Amount:      sdk.NewCoins(sdk.NewInt64Coin("stake", 100)),
+	}
+
+	builder := s.txConf.NewTxBuilder()
+	err := builder.SetMsgs(msg)
+	s.Require().NoError(err)
+
+	expectedMemo := "test-memo-for-deposit-123"
+	builder.SetMemo(expectedMemo)
+
+	txBytes, err := s.txConf.TxEncoder()(builder.GetTx())
+	s.Require().NoError(err)
+
+	rosTx, err := s.c.ToRosetta().Tx(txBytes, nil)
+	s.Require().NoError(err)
+
+	s.Require().NotNil(rosTx.Metadata)
+	memo, ok := rosTx.Metadata["memo"]
+	s.Require().True(ok, "metadata should contain memo field")
+	s.Require().Equal(expectedMemo, memo)
+}
+
+func (s *ConverterTestSuite) TestTxWithEmptyMemo() {
+	addr1 := sdk.AccAddress("address1")
+	addr2 := sdk.AccAddress("address2")
+
+	msg := &bank.MsgSend{
+		FromAddress: addr1.String(),
+		ToAddress:   addr2.String(),
+		Amount:      sdk.NewCoins(sdk.NewInt64Coin("stake", 100)),
+	}
+
+	builder := s.txConf.NewTxBuilder()
+	err := builder.SetMsgs(msg)
+	s.Require().NoError(err)
+
+	txBytes, err := s.txConf.TxEncoder()(builder.GetTx())
+	s.Require().NoError(err)
+
+	rosTx, err := s.c.ToRosetta().Tx(txBytes, nil)
+	s.Require().NoError(err)
+
+	s.Require().NotNil(rosTx.Metadata)
+	memo, ok := rosTx.Metadata["memo"]
+	s.Require().True(ok, "metadata should contain memo field")
+	s.Require().Equal("", memo)
+}
+
 func TestConverterTestSuite(t *testing.T) {
 	suite.Run(t, new(ConverterTestSuite))
 }

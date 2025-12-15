@@ -321,9 +321,25 @@ func (c converter) Tx(rawTx cmttypes.Tx, txResult *abci.ExecTxResult) (*rosettat
 	// now normalize indexes
 	totalOps := AddOperationIndexes(rawTxOps, balanceOps)
 
+	// get memo
+	memoTx, ok := tx.(sdk.TxWithMemo)
+	if !ok {
+		return nil, crgerrs.WrapError(crgerrs.ErrCodec, fmt.Sprintf("expected TxWithMemo, got %T", tx))
+	}
+
+	txMetadata := TxMetadata{
+		Memo: memoTx.GetMemo(),
+	}
+
+	metadata, err := txMetadata.ToMetadata()
+	if err != nil {
+		return nil, crgerrs.WrapError(crgerrs.ErrCodec, err.Error())
+	}
+
 	return &rosettatypes.Transaction{
 		TransactionIdentifier: &rosettatypes.TransactionIdentifier{Hash: fmt.Sprintf("%X", rawTx.Hash())},
 		Operations:            totalOps,
+		Metadata:              metadata,
 	}, nil
 }
 

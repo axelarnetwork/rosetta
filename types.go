@@ -100,3 +100,12 @@ func (c ConstructionMetadata) ToMetadata() (map[string]interface{}, error) {
 func (c *ConstructionMetadata) FromMetadata(meta map[string]interface{}) error {
 	return unmarshalMetadata(meta, c)
 }
+
+// TxMetadata contains transaction metadata returned in /block endpoint
+type TxMetadata struct {
+	Memo string `json:"memo"`
+}
+
+func (c TxMetadata) ToMetadata() (map[string]interface{}, error) {
+	return marshalMetadata(c)
+}
