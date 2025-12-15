@@ -1,5 +1,7 @@
 # Rosetta
 
+> **Axelar Fork:** This branch is based on upstream `release/v0.50.x` (Cosmos SDK v0.50.12) with customizations for Axelar network. See **[AXELAR_CUSTOMIZATIONS.md](./AXELAR_CUSTOMIZATIONS.md)** for details on sub-account staking queries, symbol/decimal mapping, and other modifications.
+
 The `rosetta` project implements Coinbase's [Rosetta API](https://www.rosetta-api.org). This document provides instructions on how to use the Rosetta API integration. For information about the motivation and design choices, refer to [ADR 035](https://docs.cosmos.network/main/architecture/adr-035-rosetta-api-support).
 
 ## Installing Rosetta
