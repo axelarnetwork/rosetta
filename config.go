@@ -110,7 +110,7 @@ type Config struct {
 	// GasPrices defines the gas prices for fee suggestion
 	GasPrices sdk.DecCoins
 	// Codec overrides the default data and construction api client codecs
-	Codec *codec.ProtoCodec
+	Codec codec.Codec
 	// InterfaceRegistry overrides the default data and construction api interface registry
 	InterfaceRegistry codectypes.InterfaceRegistry
 	// Bech32Prefix defines the prefix used for bech32 addresses in the network.
@@ -202,7 +202,7 @@ func (c *Config) validateURL(tendermintRPC string) (string, error) {
 }
 
 // WithCodec extends the configuration with a predefined Codec
-func (c *Config) WithCodec(ir codectypes.InterfaceRegistry, cdc *codec.ProtoCodec) {
+func (c *Config) WithCodec(ir codectypes.InterfaceRegistry, cdc codec.Codec) {
 	c.Codec = cdc
 	c.InterfaceRegistry = ir
 }

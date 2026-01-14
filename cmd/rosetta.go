@@ -23,11 +23,7 @@ func RosettaCommand(ir codectypes.InterfaceRegistry, cdc codec.Codec) *cobra.Com
 				return err
 			}
 
-			protoCodec, ok := cdc.(*codec.ProtoCodec)
-			if !ok {
-				return fmt.Errorf("exoected *codec.ProtoMarshaler, got: %T", cdc)
-			}
-			conf.WithCodec(ir, protoCodec)
+			conf.WithCodec(ir, cdc)
 
 			pluginPath := cmd.Flag(rosetta.FlagPlugin).Value.String()
 			typesServer := cmd.Flag(rosetta.FlagGRPCTypesServerEndpoint).Value.String()

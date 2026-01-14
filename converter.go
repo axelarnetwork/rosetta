@@ -108,11 +108,11 @@ type converter struct {
 	txEncode        sdk.TxEncoder
 	bytesToSign     func(tx authsigning.Tx, signerData authsigning.SignerData) (b []byte, err error)
 	ir              codectypes.InterfaceRegistry
-	cdc             *codec.ProtoCodec
+	cdc             codec.Codec
 	ac              address.Codec
 }
 
-func NewConverter(cdc *codec.ProtoCodec, ir codectypes.InterfaceRegistry, cfg sdkclient.TxConfig, ac address.Codec, symbolDecimals []SymbolDecimal) Converter {
+func NewConverter(cdc codec.Codec, ir codectypes.InterfaceRegistry, cfg sdkclient.TxConfig, ac address.Codec, symbolDecimals []SymbolDecimal) Converter {
 	denomUnits := make(map[string]SymbolDecimal)
 	for _, sd := range symbolDecimals {
 		denomUnits[sd.Base] = sd
