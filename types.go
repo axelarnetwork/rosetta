@@ -7,6 +7,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	auth "github.com/cosmos/cosmos-sdk/x/auth/types"
+	staking "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 // statuses
@@ -60,7 +61,18 @@ const (
 	MsgMultiSendOperation = "/cosmos.bank.v1beta1.MsgMultiSend"
 )
 
-var FeeCollector = sdk.AccAddress(crypto.AddressHash([]byte(auth.FeeCollectorName)))
+// StakingMsgTypes maps staking message type URLs to their event type names
+var StakingMsgTypes = map[string]string{
+	"/cosmos.staking.v1beta1.MsgDelegate":        staking.EventTypeDelegate,
+	"/cosmos.staking.v1beta1.MsgUndelegate":      staking.EventTypeUnbond,
+	"/cosmos.staking.v1beta1.MsgBeginRedelegate": staking.EventTypeRedelegate,
+}
+
+var (
+	FeeCollector  = sdk.AccAddress(crypto.AddressHash([]byte(auth.FeeCollectorName)))
+	BondedPool    = sdk.AccAddress(crypto.AddressHash([]byte(staking.BondedPoolName)))
+	NotBondedPool = sdk.AccAddress(crypto.AddressHash([]byte(staking.NotBondedPoolName)))
+)
 
 // ConstructionPreprocessMetadata is used to represent
 // the metadata rosetta can provide during preprocess options
