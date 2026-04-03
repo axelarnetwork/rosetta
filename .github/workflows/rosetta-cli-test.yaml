@@ -21,6 +21,6 @@ jobs:
           go-version: '^1.22'
       - name: Run make test-rosetta-ci
         run:
-          COSMOS_SDK_VERSION=v0.52.0-rc.1
+          COSMOS_SDK_VERSION=v0.50.15
           make test-rosetta-ci
         shell: bash

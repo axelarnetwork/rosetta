@@ -116,7 +116,7 @@ type Client interface {
 	UnbondingDelegations(ctx context.Context, delegator string, height *int64) ([]*types.Amount, error)
 	// Rewards fetches the pending rewards of the given delegator address
 	// If validator is empty, returns all rewards with metadata. If specified, returns rewards for that validator.
-	Rewards(ctx context.Context, delegator string, validator string, height *int64) ([]*types.Amount, error)
+	Rewards(ctx context.Context, delegator, validator string, height *int64) ([]*types.Amount, error)
 	// BlockByHash gets a block and its transaction at the provided height
 	BlockByHash(ctx context.Context, hash string) (BlockResponse, error)
 	// BlockByHeight gets a block given its height, if height is nil then last block is returned
