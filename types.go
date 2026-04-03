@@ -53,10 +53,11 @@ const (
 )
 
 const (
-	FeePayerOperation    = "fee_payer"
-	FeeReceiverOperation = "fee_receiver"
-	TransferOperation    = "Transfer"
-	MsgSendOperation     = "/cosmos.bank.v1beta1.MsgSend"
+	FeePayerOperation     = "fee_payer"
+	FeeReceiverOperation  = "fee_receiver"
+	TransferOperation     = "Transfer"
+	MsgSendOperation      = "/cosmos.bank.v1beta1.MsgSend"
+	MsgMultiSendOperation = "/cosmos.bank.v1beta1.MsgMultiSend"
 )
 
 var FeeCollector = sdk.AccAddress(crypto.AddressHash([]byte(auth.FeeCollectorName)))
