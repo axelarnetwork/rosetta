@@ -174,7 +174,7 @@ func (s *ConverterTestSuite) TestOpsAndSigners() {
 		s.Require().NoError(err)
 
 		s.Require().Equal(1, len(ops), "should have one operation")
-		s.Require().Equal(sdk.MsgTypeURL(msg), ops[0].Type)
+		s.Require().Equal(rosetta.TransferOperation, ops[0].Type)
 		s.Require().Equal(addr1.String(), ops[0].Account.Address)
 
 		s.Require().Equal(1, len(signers), "should have one signer")
@@ -382,6 +382,158 @@ func (s *ConverterTestSuite) TestTxWithEmptyMemo() {
 	memo, ok := rosTx.Metadata["memo"]
 	s.Require().True(ok, "metadata should contain memo field")
 	s.Require().Equal("", memo)
+}
+
+func (s *ConverterTestSuite) TestTxMsgSendWithEvents() {
+	// Build a MsgSend transaction
+	sender := sdk.AccAddress("sender-address-bytes1")
+	recipient := sdk.AccAddress("recip-address-bytes12")
+
+	msg := &bank.MsgSend{
+		FromAddress: sender.String(),
+		ToAddress:   recipient.String(),
+		Amount:      sdk.NewCoins(sdk.NewInt64Coin("utest", 50000)),
+	}
+
+	builder := s.txConf.NewTxBuilder()
+	s.Require().NoError(builder.SetMsgs(msg))
+
+	txBytes, err := s.txConf.TxEncoder()(builder.GetTx())
+	s.Require().NoError(err)
+
+	feeCollectorAddr := rosetta.FeeCollector.String()
+
+	s.Run("with tx result produces Transfer + balance ops + fee ops without fee duplicates", func() {
+		txResult := &abci.ExecTxResult{
+			Code: 0,
+			Events: []abci.Event{
+				// fee collection: coin_spent from sender (fee amount)
+				{Type: bank.EventTypeCoinSpent, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeySpender, Value: sender.String()},
+					{Key: sdk.AttributeKeyAmount, Value: "10utest"},
+				}},
+				// fee collection: coin_received by fee collector
+				{Type: bank.EventTypeCoinReceived, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeyReceiver, Value: feeCollectorAddr},
+					{Key: sdk.AttributeKeyAmount, Value: "10utest"},
+				}},
+				// fee event (tx-level)
+				{Type: sdk.EventTypeTx, Attributes: []abci.EventAttribute{
+					{Key: sdk.AttributeKeyFee, Value: "10utest"},
+					{Key: sdk.AttributeKeyFeePayer, Value: sender.String()},
+				}},
+				// MsgSend: coin_spent from sender (transfer amount)
+				{Type: bank.EventTypeCoinSpent, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeySpender, Value: sender.String()},
+					{Key: sdk.AttributeKeyAmount, Value: "50000utest"},
+				}},
+				// MsgSend: coin_received by recipient (transfer amount)
+				{Type: bank.EventTypeCoinReceived, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeyReceiver, Value: recipient.String()},
+					{Key: sdk.AttributeKeyAmount, Value: "50000utest"},
+				}},
+			},
+		}
+
+		rosTx, err := s.c.ToRosetta().Tx(txBytes, txResult)
+		s.Require().NoError(err)
+
+		ops := rosTx.Operations
+
+		// Collect op types for overview
+		var types []string
+		for _, op := range ops {
+			types = append(types, op.Type)
+		}
+
+		// Should have: Transfer (from Ops) + coin_spent + coin_received (transfer balance ops) + fee_payer + fee_receiver
+		// Should NOT have: coin_spent/coin_received for fee (those are deduplicated)
+		s.Require().Equal(5, len(ops), "expected 5 ops (Transfer + 2 balance + 2 fee), got: %v", types)
+
+		// First op: Transfer from Ops()
+		s.Equal(rosetta.TransferOperation, ops[0].Type)
+		s.Equal(sender.String(), ops[0].Account.Address)
+
+		// Balance ops: coin_spent from sender (transfer amount)
+		s.Equal(bank.EventTypeCoinSpent, ops[1].Type)
+		s.Equal(sender.String(), ops[1].Account.Address)
+		s.Equal("-50000", ops[1].Amount.Value)
+
+		// Balance ops: coin_received by recipient (transfer amount)
+		s.Equal(bank.EventTypeCoinReceived, ops[2].Type)
+		s.Equal(recipient.String(), ops[2].Account.Address)
+		s.Equal("50000", ops[2].Amount.Value)
+
+		// Fee ops
+		s.Equal(rosetta.FeePayerOperation, ops[3].Type)
+		s.Equal(sender.String(), ops[3].Account.Address)
+		s.Equal("-10", ops[3].Amount.Value)
+
+		s.Equal(rosetta.FeeReceiverOperation, ops[4].Type)
+		s.Equal(feeCollectorAddr, ops[4].Account.Address)
+		s.Equal("10", ops[4].Amount.Value)
+
+		// Verify no fee collector in coin_spent/coin_received ops
+		for _, op := range ops {
+			if op.Type == bank.EventTypeCoinSpent || op.Type == bank.EventTypeCoinReceived {
+				s.NotEqual(feeCollectorAddr, op.Account.Address,
+					"fee collector should not appear in coin_spent/coin_received when fee ops are present")
+			}
+		}
+	})
+
+	s.Run("nil tx result produces only Transfer op", func() {
+		rosTx, err := s.c.ToRosetta().Tx(txBytes, nil)
+		s.Require().NoError(err)
+
+		ops := rosTx.Operations
+		s.Require().Equal(1, len(ops))
+		s.Equal(rosetta.TransferOperation, ops[0].Type)
+		s.Equal(sender.String(), ops[0].Account.Address)
+	})
+
+	s.Run("failed tx produces Transfer op with reverted status", func() {
+		txResult := &abci.ExecTxResult{
+			Code: 1, // non-zero = failure
+		}
+
+		rosTx, err := s.c.ToRosetta().Tx(txBytes, txResult)
+		s.Require().NoError(err)
+
+		ops := rosTx.Operations
+		// Failed tx: Ops() still runs but BalanceOps also runs (no events though)
+		s.Require().Equal(1, len(ops))
+		s.Equal(rosetta.TransferOperation, ops[0].Type)
+		s.Require().NotNil(ops[0].Status)
+		s.Equal(rosetta.StatusTxReverted, *ops[0].Status)
+	})
+
+	s.Run("no fee event means no fee ops and no deduplication", func() {
+		txResult := &abci.ExecTxResult{
+			Code: 0,
+			Events: []abci.Event{
+				// Only MsgSend events, no fee events
+				{Type: bank.EventTypeCoinSpent, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeySpender, Value: sender.String()},
+					{Key: sdk.AttributeKeyAmount, Value: "50000utest"},
+				}},
+				{Type: bank.EventTypeCoinReceived, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeyReceiver, Value: recipient.String()},
+					{Key: sdk.AttributeKeyAmount, Value: "50000utest"},
+				}},
+			},
+		}
+
+		rosTx, err := s.c.ToRosetta().Tx(txBytes, txResult)
+		s.Require().NoError(err)
+
+		ops := rosTx.Operations
+		// Transfer + coin_spent + coin_received (no fee ops, no dedup)
+		s.Require().Equal(3, len(ops))
+		s.Equal(rosetta.TransferOperation, ops[0].Type)
+		s.Equal(bank.EventTypeCoinSpent, ops[1].Type)
+		s.Equal(bank.EventTypeCoinReceived, ops[2].Type)
+	})
 }
 
 func TestConverterTestSuite(t *testing.T) {

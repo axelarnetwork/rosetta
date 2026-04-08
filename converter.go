@@ -308,6 +308,14 @@ func (c converter) Tx(rawTx cmttypes.Tx, txResult *abci.ExecTxResult) (*rosettat
 		if err != nil {
 			return nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("while getting operations from status and msg %s", err.Error()))
 		}
+
+		// rename MsgSend operations to Transfer
+		if sdk.MsgTypeURL(msg) == MsgSendOperation {
+			for _, op := range ops {
+				op.Type = TransferOperation
+			}
+		}
+
 		rawTxOps = append(rawTxOps, ops...)
 	}
 
@@ -318,8 +326,54 @@ func (c converter) Tx(rawTx cmttypes.Tx, txResult *abci.ExecTxResult) (*rosettat
 		balanceOps = c.BalanceOps(StatusTxSuccess, txResult.Events) // force set to success because no events for failed tx
 	}
 
+	// extract fee operations from tx-level events
+	var feeOps []*rosettatypes.Operation
+	if txResult != nil {
+		feeOps, err = c.getFeeOps(txResult.Events)
+		if err != nil {
+			return nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("getting fee ops %s", err.Error()))
+		}
+	}
+
+	// when fee ops are present, remove the duplicate coin_spent/coin_received
+	// that correspond to the fee payment, since those are now represented by
+	// fee_payer/fee_receiver ops. Fee events are identified by involving the
+	// fee collector address (coin_received to collector, coin_spent from payer
+	// with matching amount).
+	if len(feeOps) > 0 {
+		feeCollectorAddr := FeeCollector.String()
+		// collect fee payer address+amount pairs to match against coin_spent
+		type feeKey struct{ addr, amount string }
+		feePayerOps := make(map[feeKey]int)
+		for _, op := range feeOps {
+			if op.Type == FeePayerOperation && op.Account != nil && op.Amount != nil {
+				feePayerOps[feeKey{op.Account.Address, op.Amount.Value}]++
+			}
+		}
+
+		filtered := make([]*rosettatypes.Operation, 0, len(balanceOps))
+		for _, op := range balanceOps {
+			if op.Account == nil || op.Amount == nil {
+				filtered = append(filtered, op)
+				continue
+			}
+			// skip coin_received by fee collector
+			if op.Account.Address == feeCollectorAddr {
+				continue
+			}
+			// skip coin_spent that matches a fee payer address+amount
+			key := feeKey{op.Account.Address, op.Amount.Value}
+			if feePayerOps[key] > 0 {
+				feePayerOps[key]--
+				continue
+			}
+			filtered = append(filtered, op)
+		}
+		balanceOps = filtered
+	}
+
 	// now normalize indexes
-	totalOps := AddOperationIndexes(rawTxOps, balanceOps)
+	totalOps := AddOperationIndexes(rawTxOps, append(balanceOps, feeOps...))
 
 	// get memo
 	memoTx, ok := tx.(sdk.TxWithMemo)
@@ -444,6 +498,58 @@ func (c converter) sdkEventToBalanceOperations(status string, event abci.Event) 
 		operations[i] = op
 	}
 	return operations, true
+}
+
+// getFeeOps extracts fee_payer and fee_receiver operations from tx-level events.
+func (c converter) getFeeOps(events []abci.Event) ([]*rosettatypes.Operation, error) {
+	var feeEvent *abci.Event
+	for i := range events {
+		e := &events[i]
+		if e.Type == sdk.EventTypeTx &&
+			len(e.Attributes) == 2 &&
+			e.Attributes[0].Key == sdk.AttributeKeyFee &&
+			e.Attributes[1].Key == sdk.AttributeKeyFeePayer {
+			feeEvent = e
+			break
+		}
+	}
+
+	if feeEvent == nil {
+		return nil, nil
+	}
+
+	fees, err := sdk.ParseCoinsNormalized(feeEvent.Attributes[0].Value)
+	if err != nil {
+		return nil, err
+	}
+
+	var operations []*rosettatypes.Operation
+	status := StatusTxSuccess
+	payer := feeEvent.Attributes[1].Value
+	for _, fee := range fees {
+		operations = append(operations,
+			&rosettatypes.Operation{
+				Type:    FeePayerOperation,
+				Status:  &status,
+				Account: &rosettatypes.AccountIdentifier{Address: payer},
+				Amount: &rosettatypes.Amount{
+					Value:    fmt.Sprintf("-%s", fee.Amount.String()),
+					Currency: c.ToCurrency(fee.GetDenom()),
+				},
+			},
+			&rosettatypes.Operation{
+				Type:    FeeReceiverOperation,
+				Status:  &status,
+				Account: &rosettatypes.AccountIdentifier{Address: FeeCollector.String()},
+				Amount: &rosettatypes.Amount{
+					Value:    fee.Amount.String(),
+					Currency: c.ToCurrency(fee.GetDenom()),
+				},
+			},
+		)
+	}
+
+	return operations, nil
 }
 
 // Amounts converts []sdk.Coin to rosetta amounts, with optional metadata
