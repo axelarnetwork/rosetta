@@ -380,6 +380,16 @@ func (c converter) Tx(rawTx cmttypes.Tx, txResult *abci.ExecTxResult) (*rosettat
 		balanceOps = filtered
 	}
 
+	// for staking messages, retype coin_spent/coin_received balance ops to the
+	// appropriate staking event type (delegate, unbond, redelegate)
+	if len(msgs) == 1 {
+		if stakingType, ok := StakingMsgTypes[sdk.MsgTypeURL(msgs[0])]; ok {
+			for _, op := range balanceOps {
+				op.Type = stakingType
+			}
+		}
+	}
+
 	// now normalize indexes
 	totalOps := AddOperationIndexes(rawTxOps, append(balanceOps, feeOps...))
 

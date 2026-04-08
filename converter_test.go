@@ -17,6 +17,7 @@ import (
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	bank "github.com/cosmos/cosmos-sdk/x/bank/types"
+	staking "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	"github.com/cosmos/rosetta"
 	crgerrs "github.com/cosmos/rosetta/lib/errors"
@@ -619,6 +620,147 @@ func (s *ConverterTestSuite) TestTxMsgMultiSendSkipsOps() {
 			s.NotEqual(rosetta.MsgMultiSendOperation, op.Type,
 				"MsgMultiSend should not produce a message-level operation")
 		}
+	})
+}
+
+func (s *ConverterTestSuite) TestTxStakingOpsRetyped() {
+	feeCollectorAddr := rosetta.FeeCollector.String()
+
+	s.Run("MsgDelegate produces delegate-typed balance ops with related_operations", func() {
+		cdc, ir := rosetta.MakeCodec()
+		staking.RegisterInterfaces(ir)
+		txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
+		c := rosetta.NewConverter(cdc, ir, txConfig, address.NewBech32Codec("axelar"), nil)
+
+		delegatorAddr := sdk.AccAddress("delegator-addr-bytes").String()
+		validatorAddr := sdk.ValAddress("validator-addr-bytes").String()
+		bondedPoolAddr := rosetta.BondedPool.String()
+
+		builder := txConfig.NewTxBuilder()
+		s.Require().NoError(builder.SetMsgs(&staking.MsgDelegate{
+			DelegatorAddress: delegatorAddr,
+			ValidatorAddress: validatorAddr,
+			Amount:           sdk.NewInt64Coin("utest", 5000000),
+		}))
+
+		txBytes, err := txConfig.TxEncoder()(builder.GetTx())
+		s.Require().NoError(err)
+
+		txResult := &abci.ExecTxResult{
+			Code: 0,
+			Events: []abci.Event{
+				{Type: bank.EventTypeCoinSpent, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeySpender, Value: delegatorAddr},
+					{Key: sdk.AttributeKeyAmount, Value: "10utest"},
+				}},
+				{Type: bank.EventTypeCoinReceived, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeyReceiver, Value: feeCollectorAddr},
+					{Key: sdk.AttributeKeyAmount, Value: "10utest"},
+				}},
+				{Type: sdk.EventTypeTx, Attributes: []abci.EventAttribute{
+					{Key: sdk.AttributeKeyFee, Value: "10utest"},
+					{Key: sdk.AttributeKeyFeePayer, Value: delegatorAddr},
+				}},
+				{Type: bank.EventTypeCoinSpent, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeySpender, Value: delegatorAddr},
+					{Key: sdk.AttributeKeyAmount, Value: "5000000utest"},
+				}},
+				{Type: bank.EventTypeCoinReceived, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeyReceiver, Value: bondedPoolAddr},
+					{Key: sdk.AttributeKeyAmount, Value: "5000000utest"},
+				}},
+			},
+		}
+
+		rosTx, err := c.ToRosetta().Tx(txBytes, txResult)
+		s.Require().NoError(err)
+
+		ops := rosTx.Operations
+		var types []string
+		for _, op := range ops {
+			types = append(types, op.Type)
+		}
+
+		s.Require().Equal(5, len(ops), "expected 5 ops, got: %v", types)
+
+		s.Equal("/cosmos.staking.v1beta1.MsgDelegate", ops[0].Type)
+		s.Equal("delegate", ops[1].Type)
+		s.Equal(delegatorAddr, ops[1].Account.Address)
+		s.Equal("-5000000", ops[1].Amount.Value)
+		s.Equal("delegate", ops[2].Type)
+		s.Equal(bondedPoolAddr, ops[2].Account.Address)
+		s.Equal("5000000", ops[2].Amount.Value)
+		s.Equal(rosetta.FeePayerOperation, ops[3].Type)
+		s.Equal(rosetta.FeeReceiverOperation, ops[4].Type)
+	})
+
+	s.Run("MsgUndelegate produces unbond-typed balance ops with related_operations", func() {
+		cdc, ir := rosetta.MakeCodec()
+		staking.RegisterInterfaces(ir)
+		txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
+		c := rosetta.NewConverter(cdc, ir, txConfig, address.NewBech32Codec("axelar"), nil)
+
+		delegatorAddr := sdk.AccAddress("delegator-addr-bytes").String()
+		validatorAddr := sdk.ValAddress("validator-addr-bytes").String()
+		bondedPoolAddr := rosetta.BondedPool.String()
+		notBondedPoolAddr := rosetta.NotBondedPool.String()
+
+		builder := txConfig.NewTxBuilder()
+		s.Require().NoError(builder.SetMsgs(&staking.MsgUndelegate{
+			DelegatorAddress: delegatorAddr,
+			ValidatorAddress: validatorAddr,
+			Amount:           sdk.NewInt64Coin("utest", 1000000),
+		}))
+
+		txBytes, err := txConfig.TxEncoder()(builder.GetTx())
+		s.Require().NoError(err)
+
+		txResult := &abci.ExecTxResult{
+			Code: 0,
+			Events: []abci.Event{
+				{Type: bank.EventTypeCoinSpent, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeySpender, Value: delegatorAddr},
+					{Key: sdk.AttributeKeyAmount, Value: "12utest"},
+				}},
+				{Type: bank.EventTypeCoinReceived, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeyReceiver, Value: feeCollectorAddr},
+					{Key: sdk.AttributeKeyAmount, Value: "12utest"},
+				}},
+				{Type: sdk.EventTypeTx, Attributes: []abci.EventAttribute{
+					{Key: sdk.AttributeKeyFee, Value: "12utest"},
+					{Key: sdk.AttributeKeyFeePayer, Value: delegatorAddr},
+				}},
+				{Type: bank.EventTypeCoinSpent, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeySpender, Value: bondedPoolAddr},
+					{Key: sdk.AttributeKeyAmount, Value: "1000000utest"},
+				}},
+				{Type: bank.EventTypeCoinReceived, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeyReceiver, Value: notBondedPoolAddr},
+					{Key: sdk.AttributeKeyAmount, Value: "1000000utest"},
+				}},
+			},
+		}
+
+		rosTx, err := c.ToRosetta().Tx(txBytes, txResult)
+		s.Require().NoError(err)
+
+		ops := rosTx.Operations
+		var types []string
+		for _, op := range ops {
+			types = append(types, op.Type)
+		}
+
+		s.Require().Equal(5, len(ops), "expected 5 ops, got: %v", types)
+
+		s.Equal("/cosmos.staking.v1beta1.MsgUndelegate", ops[0].Type)
+		s.Equal("unbond", ops[1].Type)
+		s.Equal(bondedPoolAddr, ops[1].Account.Address)
+		s.Equal("-1000000", ops[1].Amount.Value)
+		s.Equal("unbond", ops[2].Type)
+		s.Equal(notBondedPoolAddr, ops[2].Account.Address)
+		s.Equal("1000000", ops[2].Amount.Value)
+		s.Equal(rosetta.FeePayerOperation, ops[3].Type)
+		s.Equal(rosetta.FeeReceiverOperation, ops[4].Type)
 	})
 }
 
