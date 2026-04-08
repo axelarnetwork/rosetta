@@ -304,13 +304,21 @@ func (c converter) Tx(rawTx cmttypes.Tx, txResult *abci.ExecTxResult) (*rosettat
 	var rawTxOps []*rosettatypes.Operation
 
 	for _, msg := range msgs {
+		msgType := sdk.MsgTypeURL(msg)
+
+		// skip Ops() for MsgMultiSend — balance changes are fully captured
+		// by BalanceOps from events.
+		if msgType == MsgMultiSendOperation {
+			continue
+		}
+
 		ops, err := c.Ops(status, msg)
 		if err != nil {
 			return nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("while getting operations from status and msg %s", err.Error()))
 		}
 
 		// rename MsgSend operations to Transfer
-		if sdk.MsgTypeURL(msg) == MsgSendOperation {
+		if msgType == MsgSendOperation {
 			for _, op := range ops {
 				op.Type = TransferOperation
 			}

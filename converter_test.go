@@ -536,6 +536,92 @@ func (s *ConverterTestSuite) TestTxMsgSendWithEvents() {
 	})
 }
 
+func (s *ConverterTestSuite) TestTxMsgMultiSendSkipsOps() {
+	// Build a MsgMultiSend transaction
+	sender := sdk.AccAddress("sender-address-bytes1")
+	recipient := sdk.AccAddress("recip-address-bytes12")
+
+	msg := &bank.MsgMultiSend{
+		Inputs: []bank.Input{
+			{Address: sender.String(), Coins: sdk.NewCoins(sdk.NewInt64Coin("utest", 10000000000))},
+		},
+		Outputs: []bank.Output{
+			{Address: recipient.String(), Coins: sdk.NewCoins(sdk.NewInt64Coin("utest", 10000000000))},
+		},
+	}
+
+	builder := s.txConf.NewTxBuilder()
+	s.Require().NoError(builder.SetMsgs(msg))
+
+	txBytes, err := s.txConf.TxEncoder()(builder.GetTx())
+	s.Require().NoError(err)
+
+	feeCollectorAddr := rosetta.FeeCollector.String()
+
+	s.Run("MsgMultiSend produces only balance ops and fee ops, no message-level op", func() {
+		txResult := &abci.ExecTxResult{
+			Code: 0,
+			Events: []abci.Event{
+				// fee collection
+				{Type: bank.EventTypeCoinSpent, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeySpender, Value: sender.String()},
+					{Key: sdk.AttributeKeyAmount, Value: "10utest"},
+				}},
+				{Type: bank.EventTypeCoinReceived, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeyReceiver, Value: feeCollectorAddr},
+					{Key: sdk.AttributeKeyAmount, Value: "10utest"},
+				}},
+				{Type: sdk.EventTypeTx, Attributes: []abci.EventAttribute{
+					{Key: sdk.AttributeKeyFee, Value: "10utest"},
+					{Key: sdk.AttributeKeyFeePayer, Value: sender.String()},
+				}},
+				// MsgMultiSend balance events
+				{Type: bank.EventTypeCoinSpent, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeySpender, Value: sender.String()},
+					{Key: sdk.AttributeKeyAmount, Value: "10000000000utest"},
+				}},
+				{Type: bank.EventTypeCoinReceived, Attributes: []abci.EventAttribute{
+					{Key: bank.AttributeKeyReceiver, Value: recipient.String()},
+					{Key: sdk.AttributeKeyAmount, Value: "10000000000utest"},
+				}},
+			},
+		}
+
+		rosTx, err := s.c.ToRosetta().Tx(txBytes, txResult)
+		s.Require().NoError(err)
+
+		ops := rosTx.Operations
+
+		var types []string
+		for _, op := range ops {
+			types = append(types, op.Type)
+		}
+
+		// Should have: coin_spent + coin_received (transfer) + fee_payer + fee_receiver
+		// Should NOT have: /cosmos.bank.v1beta1.MsgMultiSend op
+		s.Require().Equal(4, len(ops), "expected 4 ops (2 balance + 2 fee), got: %v", types)
+
+		// Balance ops
+		s.Equal(bank.EventTypeCoinSpent, ops[0].Type)
+		s.Equal(sender.String(), ops[0].Account.Address)
+		s.Equal("-10000000000", ops[0].Amount.Value)
+
+		s.Equal(bank.EventTypeCoinReceived, ops[1].Type)
+		s.Equal(recipient.String(), ops[1].Account.Address)
+		s.Equal("10000000000", ops[1].Amount.Value)
+
+		// Fee ops
+		s.Equal(rosetta.FeePayerOperation, ops[2].Type)
+		s.Equal(rosetta.FeeReceiverOperation, ops[3].Type)
+
+		// No MsgMultiSend type op
+		for _, op := range ops {
+			s.NotEqual(rosetta.MsgMultiSendOperation, op.Type,
+				"MsgMultiSend should not produce a message-level operation")
+		}
+	})
+}
+
 func TestConverterTestSuite(t *testing.T) {
 	suite.Run(t, new(ConverterTestSuite))
 }
