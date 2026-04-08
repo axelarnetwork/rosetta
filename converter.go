@@ -329,7 +329,10 @@ func (c converter) Tx(rawTx cmttypes.Tx, txResult *abci.ExecTxResult) (*rosettat
 	// extract fee operations from tx-level events
 	var feeOps []*rosettatypes.Operation
 	if txResult != nil {
-		feeOps = c.getFeeOps(txResult.Events)
+		feeOps, err = c.getFeeOps(txResult.Events)
+		if err != nil {
+			return nil, crgerrs.WrapError(crgerrs.ErrConverter, fmt.Sprintf("getting fee ops %s", err.Error()))
+		}
 	}
 
 	// when fee ops are present, remove the duplicate coin_spent/coin_received
@@ -498,7 +501,7 @@ func (c converter) sdkEventToBalanceOperations(status string, event abci.Event) 
 }
 
 // getFeeOps extracts fee_payer and fee_receiver operations from tx-level events.
-func (c converter) getFeeOps(events []abci.Event) []*rosettatypes.Operation {
+func (c converter) getFeeOps(events []abci.Event) ([]*rosettatypes.Operation, error) {
 	var feeEvent *abci.Event
 	for i := range events {
 		e := &events[i]
@@ -512,12 +515,12 @@ func (c converter) getFeeOps(events []abci.Event) []*rosettatypes.Operation {
 	}
 
 	if feeEvent == nil {
-		return nil
+		return nil, nil
 	}
 
 	fees, err := sdk.ParseCoinsNormalized(feeEvent.Attributes[0].Value)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	var operations []*rosettatypes.Operation
@@ -546,7 +549,7 @@ func (c converter) getFeeOps(events []abci.Event) []*rosettatypes.Operation {
 		)
 	}
 
-	return operations
+	return operations, nil
 }
 
 // Amounts converts []sdk.Coin to rosetta amounts, with optional metadata
