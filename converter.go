@@ -626,7 +626,7 @@ func (c converter) OpsAndSigners(txBytes []byte) (ops []*rosettatypes.Operation,
 		})
 	}
 
-	return
+	return ops, signers, nil
 }
 
 func (c converter) SignedTx(txBytes []byte, signatures []*rosettatypes.Signature) (signedTxBytes []byte, err error) {

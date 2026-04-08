@@ -259,7 +259,7 @@ func (c *Client) UnbondingDelegations(ctx context.Context, delegator string, hei
 
 // Rewards fetches the pending rewards of the given delegator address.
 // If validator is empty, returns all rewards with metadata. If specified, returns rewards for that validator.
-func (c *Client) Rewards(ctx context.Context, delegator string, validator string, height *int64) ([]*rosettatypes.Amount, error) {
+func (c *Client) Rewards(ctx context.Context, delegator, validator string, height *int64) ([]*rosettatypes.Amount, error) {
 	if height != nil {
 		strHeight := strconv.FormatInt(*height, 10)
 		ctx = metadata.AppendToOutgoingContext(ctx, grpctypes.GRPCBlockHeightHeader, strHeight)
@@ -359,7 +359,6 @@ func (c *Client) BlockTransactionsByHeight(ctx context.Context, height *int64) (
 	return blockTxResp, nil
 }
 
-
 func (c *Client) TxOperationsAndSignersAccountIdentifiers(signed bool, txBytes []byte) (ops []*rosettatypes.Operation, signers []*rosettatypes.AccountIdentifier, err error) {
 	switch signed {
 	case false:
@@ -370,7 +369,7 @@ func (c *Client) TxOperationsAndSignersAccountIdentifiers(signed bool, txBytes [
 		return rosTx.Operations, nil, nil
 	default:
 		ops, signers, err = c.converter.ToRosetta().OpsAndSigners(txBytes)
-		return
+		return ops, signers, err
 	}
 }
 
