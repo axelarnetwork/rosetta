@@ -38,7 +38,6 @@ func TestDerive(t *testing.T) {
 
 func TestHash(t *testing.T) {
 	sut.ResetChain(t)
-	sut.StartChain(t)
 
 	cli := systemtests.NewCLIWrapper(t, sut, verbose)
 	fromAddr := cli.AddKey("account1")
@@ -46,6 +45,8 @@ func TestHash(t *testing.T) {
 		[]string{"genesis", "add-genesis-account", fromAddr, "10000000stake"},
 	)
 	toAddr := cli.AddKey("account2")
+
+	sut.StartChain(t)
 
 	rosetta.restart(t)
 	rosettaRest := newRestClient(rosetta)
